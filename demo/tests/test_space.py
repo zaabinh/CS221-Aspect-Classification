@@ -47,11 +47,13 @@ def test_space_preserves_multiple_labels_and_threshold_details(space_app):
         "latency_ms": 12.5,
         "fallback_used": False,
     }
-    aspects, rows, note = space_app.analyze("  tasty but expensive  ")
-    space_app.predict_on_gpu.assert_called_once_with("tasty but expensive")
+    aspects, rows, note, html = space_app.analyze("  tasty but expensive  ")
+    space_app.predict_on_gpu.assert_called_once_with("tasty but expensive", "retrained")
     assert aspects == "food, price"
     assert rows == [["food", 0.8, 0.43, True], ["price", 0.6, 0.44, True]]
     assert "12.5 ms" in note
+    assert html.count('role="meter"') == 2
+    assert "Fine-tuned MPNet" in html
 
 
 def test_space_hides_internal_prediction_errors(space_app):
@@ -59,6 +61,41 @@ def test_space_hides_internal_prediction_errors(space_app):
     with pytest.raises(UserError) as error:
         space_app.analyze("good food")
     assert "internal model path" not in str(error.value)
+
+
+def test_unknown_model_is_rejected_before_gpu(space_app):
+    with pytest.raises(UserError, match="select"):
+        space_app.analyze("good food", "../../other-model")
+    space_app.predict_on_gpu.assert_not_called()
+
+
+@pytest.mark.parametrize("model_key", ["retrained", "unretrained", "tfidf"])
+def test_selected_model_routes_to_the_correct_runtime(space_app, model_key):
+    prediction = {"aspects": ["food"], "scores": [], "latency_ms": 1, "fallback_used": False}
+    cpu_model = Mock()
+    cpu_model.predict.return_value = prediction
+    space_app.models = {"tfidf": cpu_model}
+    space_app.predict_on_gpu.return_value = prediction
+    assert space_app.analyze("good food", model_key)[0] == "food"
+    if model_key == "tfidf":
+        cpu_model.predict.assert_called_once_with("good food")
+        space_app.predict_on_gpu.assert_not_called()
+    else:
+        space_app.predict_on_gpu.assert_called_once_with("good food", model_key)
+        cpu_model.predict.assert_not_called()
+
+
+def test_result_html_escapes_dynamic_labels():
+    from space_ui import render_result
+
+    result = {
+        "aspects": ['<script>alert("x")</script>'], "scores": [],
+        "latency_ms": 1, "fallback_used": True,
+    }
+    html = render_result(result, "tfidf")
+    assert "<script>" not in html.lower()
+    assert "&lt;Script&gt;" in html
+    assert "highest-scoring" in html
 
 
 def test_zerogpu_model_loading_does_not_execute_warmup(monkeypatch, tmp_path):

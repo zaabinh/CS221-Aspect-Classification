@@ -67,11 +67,11 @@ def test_thresholds_fallback_to_top_aspect():
 
 # ---------- real model ----------
 
-@pytest.fixture(scope="module")
-def model():
-    if not HAS_MODEL:
+@pytest.fixture(scope="module", params=["retrained", "unretrained"])
+def model(request):
+    if not (MODEL_DIR / f"{request.param}_encoder" / "model.safetensors").exists():
         pytest.skip("model artifacts not available (git lfs pull)")
-    return AspectClassifier()
+    return AspectClassifier(classifier_name=request.param)
 
 
 def test_model_loads_with_training_label_order(model):
@@ -106,7 +106,7 @@ def test_served_pipeline_reproduces_published_test_metrics(model):
     preds = np.array([apply_thresholds(s, model.thresholds, model.aspects)[0] for s in scores]).astype(int)
 
     with (PROJECT_ROOT / "outputs" / "final_comparison" / "final_model_comparison.csv").open(encoding="utf-8") as f:
-        published = next(r for r in csv.DictReader(f) if r["model"] == "MPNet retrained")
+        published = next(r for r in csv.DictReader(f) if r["model"] == f"MPNet {model.metadata['encoder_name']}")
     assert f1_score(truth, preds, average="macro") == pytest.approx(float(published["macro_f1"]), abs=1e-6)
     assert f1_score(truth, preds, average="micro") == pytest.approx(float(published["micro_f1"]), abs=1e-6)
     assert hamming_loss(truth, preds) == pytest.approx(float(published["hamming_loss"]), abs=1e-6)

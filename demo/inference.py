@@ -13,7 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from preprocessing import clean_review_text  # noqa: E402
+from preprocessing import clean_review_text, preprocess_review  # noqa: E402
 
 MODEL_DIR = Path(os.environ.get("MODEL_DIR", PROJECT_ROOT / "models" / "mpnet"))
 CLASSIFIER_NAME = os.environ.get("CLASSIFIER_NAME", "retrained")
@@ -70,12 +70,7 @@ class AspectClassifier:
         if not processed:
             raise ValueError("Review has no usable words after preprocessing.")
 
-        embedding = self.encoder.encode(
-            [processed],
-            normalize_embeddings=self.metadata.get("normalize_embeddings", True),
-            convert_to_numpy=True,
-        )
-        scores = self.classifier.predict_proba(embedding)[0]
+        scores = self._predict_scores(processed)
         predicted, fallback = apply_thresholds(scores, self.thresholds, self.aspects)
 
         return {
@@ -93,3 +88,31 @@ class AspectClassifier:
             "processed_text": processed,
             "latency_ms": round((time.perf_counter() - start) * 1000, 1),
         }
+
+    def _predict_scores(self, processed):
+        embedding = self.encoder.encode(
+            [processed],
+            normalize_embeddings=self.metadata.get("normalize_embeddings", True),
+            convert_to_numpy=True,
+        )
+        return self.classifier.predict_proba(embedding)[0]
+
+
+class TfidfAspectClassifier(AspectClassifier):
+    """Serve the saved sparse baseline with its original preprocessing and label order."""
+
+    def __init__(self, model_dir=PROJECT_ROOT / "models" / "TF-IDF"):
+        model_dir = Path(model_dir)
+        with (model_dir / "classifiers" / "tfidf_metadata.json").open(encoding="utf-8") as f:
+            self.metadata = json.load(f)
+        self.aspects = ["food", "price", "service", "ambiance", "miscellaneous"]
+        self.thresholds = self.metadata["thresholds"]
+        self.transform = preprocess_review
+        self.vectorizer = joblib.load(model_dir / "vectorizer.joblib")
+        self.classifier = joblib.load(model_dir / "classifiers" / "tfidf_ovr_logreg.joblib")
+        self.encoder_name = "TF-IDF"
+
+    def _predict_scores(self, processed):
+        scores = self.classifier.predict_proba(self.vectorizer.transform([processed]))[0]
+        # The TF-IDF classifier was trained in food/service/price/ambiance/miscellaneous order.
+        return scores[[0, 2, 1, 3, 4]]

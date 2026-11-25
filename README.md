@@ -16,7 +16,7 @@ short_description: Multi-label aspect classification of restaurant reviews
 Given a restaurant review, predict which aspects it talks about: **food, price, service, ambiance, miscellaneous**.
 One review can mention several aspects, so this is multi-label classification.
 
-**Demo:** [AspectAI on Hugging Face Spaces](https://huggingface.co/spaces/zaabinh/aspectai), deployed with Gradio on free ZeroGPU hardware. The screenshots below show the separate Flask UI available locally.
+**Demo:** [AspectAI on Hugging Face Spaces](https://huggingface.co/spaces/zaabinh/aspectai). Choose fine-tuned MPNet, base MPNet or TF-IDF in a Gradio interface styled after the Flask UI. MPNet runs on free ZeroGPU; TF-IDF runs on CPU without consuming GPU quota. The screenshots below show the separate Flask UI available locally.
 
 | Desktop | Mobile |
 | --- | --- |
@@ -153,9 +153,12 @@ The encoder was saved with sentence-transformers 5.6.0 and cannot be loaded by o
 
 ## Deployment
 
-The public Space uses **Gradio + ZeroGPU** through [demo/space.py](demo/space.py).
-It shares the classifier, text cleaning and thresholds with the Flask application.
-The encoder weights load on CUDA at startup, with inference inside `@spaces.GPU`;
+The public Space uses **Gradio + ZeroGPU** through [demo/space.py](demo/space.py), with
+a model picker, sample reviews, colored aspect scores, cutoff markers and the recorded evaluation table.
+The default fine-tuned MPNet shares its classifier, text cleaning and thresholds with Flask.
+The base MPNet uses its own classifier and thresholds. TF-IDF uses the saved vectorizer,
+stopword removal and lemmatization, with service/price columns reordered to match the display.
+Both encoder weights load on CUDA at startup, with inference inside `@spaces.GPU`;
 startup does not execute GPU warmup. Requests are serialized and the queue holds at most 20 jobs.
 
 Free personal accounts can host up to two ZeroGPU Spaces if their email is verified,
@@ -173,7 +176,7 @@ python deploy/zerogpu/publish.py --token-name deploying
 ```
 
 The publisher creates or reuses `zaabinh/aspectai` on ZeroGPU and uploads only the runtime,
-model and documentation files. It maps [deploy/zerogpu/requirements.txt](deploy/zerogpu/requirements.txt)
+all three models and documentation files. It maps [deploy/zerogpu/requirements.txt](deploy/zerogpu/requirements.txt)
 to the Space's root `requirements.txt`; the repository's root requirements remain for experiments.
 No token is uploaded. The Space YAML configuration is at the top of this README.
 
