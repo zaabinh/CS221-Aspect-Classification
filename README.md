@@ -14,7 +14,7 @@ short_description: Multi-label aspect classification of restaurant reviews
 Given a restaurant review, predict which aspects it talks about: **food, price, service, ambiance, miscellaneous**.
 One review can mention several aspects, so this is multi-label classification.
 
-**Live demo:** not deployed yet (see [Deployment](#deployment)).
+**Live demo:** [AspectAI on Hugging Face Spaces](https://huggingface.co/spaces/zaabinh/aspectai).
 
 | Desktop | Mobile |
 | --- | --- |
@@ -191,8 +191,8 @@ Public-use safeguards: request body capped at 16 KB, reviews capped at 1,000 cha
 ## Reproduce the experiments
 
 ```bash
-git clone https://github.com/zaabinh/3bit-CS221.git
-cd 3bit-CS221
+git clone https://github.com/zaabinh/CS221-Aspect-Classification.git
+cd CS221-Aspect-Classification
 git checkout master
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate

@@ -12,7 +12,7 @@ from inference import MAX_REVIEW_CHARS, PROJECT_ROOT, AspectClassifier
 log = logging.getLogger("aspectai")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-GITHUB_URL = "https://github.com/zaabinh/3bit-CS221"
+GITHUB_URL = "https://github.com/zaabinh/CS221-Aspect-Classification"
 RESULTS_CSV = PROJECT_ROOT / "outputs" / "final_comparison" / "final_model_comparison.csv"
 RATE_LIMIT = int(os.environ.get("RATE_LIMIT_PER_MINUTE", "30"))
 
