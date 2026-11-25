@@ -34,7 +34,10 @@ def apply_thresholds(scores: np.ndarray, thresholds: dict, aspects: list) -> tup
 
 
 class AspectClassifier:
-    def __init__(self, model_dir: Path = MODEL_DIR, classifier_name: str = CLASSIFIER_NAME):
+    def __init__(
+        self, model_dir: Path = MODEL_DIR, classifier_name: str = CLASSIFIER_NAME,
+        *, device: str = "cpu", warmup: bool = True,
+    ):
         bundle = Path(model_dir) / "classifiers" / classifier_name
         with (bundle / "metadata.json").open(encoding="utf-8") as f:
             self.metadata = json.load(f)
@@ -55,9 +58,10 @@ class AspectClassifier:
         from sentence_transformers import SentenceTransformer  # heavy import, deferred until a model is actually loaded
 
         self.classifier = joblib.load(bundle / "model.joblib")
-        self.encoder = SentenceTransformer(str(encoder_dir), device="cpu")
+        self.encoder = SentenceTransformer(str(encoder_dir), device=device)
         self.encoder_name = encoder_dir.name
-        self.encoder.encode(["warm up"])  # first torch call is slow; pay it at startup, not on the first visitor
+        if warmup:
+            self.encoder.encode(["warm up"])  # ZeroGPU inference must wait for a decorated call.
 
     def predict(self, review: str) -> dict:
         start = time.perf_counter()

@@ -1,0 +1,14 @@
+# The Space builder mounts this file in /tmp before copying the application.
+# Keep it self-contained; Gradio and spaces are supplied by the ZeroGPU image.
+torch==2.12.1
+sentence-transformers==5.6.0
+transformers==5.12.1
+tokenizers==0.22.2
+safetensors==0.8.0
+huggingface_hub==1.33.0
+scikit-learn==1.8.0
+scipy==1.18.1
+numpy==2.2.6
+joblib==1.5.1
+nltk==3.9.4
+contractions==0.1.73

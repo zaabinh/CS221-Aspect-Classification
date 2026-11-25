@@ -3,8 +3,10 @@ title: AspectAI
 emoji: 🍽️
 colorFrom: green
 colorTo: blue
-sdk: docker
-app_port: 7860
+sdk: gradio
+sdk_version: 6.32.0
+python_version: "3.12"
+app_file: demo/space.py
 pinned: false
 short_description: Multi-label aspect classification of restaurant reviews
 ---
@@ -14,7 +16,7 @@ short_description: Multi-label aspect classification of restaurant reviews
 Given a restaurant review, predict which aspects it talks about: **food, price, service, ambiance, miscellaneous**.
 One review can mention several aspects, so this is multi-label classification.
 
-**Deployment target:** [AspectAI on Hugging Face Spaces](https://huggingface.co/spaces/zaabinh/aspectai) (pending deployment; a Hugging Face token with Space write/create permissions is required).
+**Demo:** [AspectAI on Hugging Face Spaces](https://huggingface.co/spaces/zaabinh/aspectai), deployed with Gradio on free ZeroGPU hardware. The screenshots below show the separate Flask UI available locally.
 
 | Desktop | Mobile |
 | --- | --- |
@@ -151,24 +153,37 @@ The encoder was saved with sentence-transformers 5.6.0 and cannot be loaded by o
 
 ## Deployment
 
-Target: **Hugging Face Spaces, Docker SDK, free CPU tier** (2 vCPU, 16 GB RAM). The app needs roughly 1.5 GB of RAM for torch plus the 420 MB encoder. That rules out 512 MB free tiers such as Render's, while Spaces gives a public URL with no server to manage.
+The public Space uses **Gradio + ZeroGPU** through [demo/space.py](demo/space.py).
+It shares the classifier, text cleaning and thresholds with the Flask application.
+The encoder weights load on CUDA at startup, with inference inside `@spaces.GPU`;
+startup does not execute GPU warmup. Requests are serialized and the queue holds at most 20 jobs.
 
-1. Create a Space at huggingface.co/new-space with SDK **Docker** and template **Blank**.
-2. Upload only what the image needs. The YAML header at the top of this README is the Space config.
-   ```bash
-   pip install -U huggingface_hub && hf auth login
-   hf upload <user>/<space> . . --repo-type space --include \
-     README.md Dockerfile preprocessing.py manual_ovr_logistic_regression.py \
-     "demo/app.py" "demo/inference.py" "demo/requirements.txt" "demo/templates/*" "demo/static/*" \
-     "models/mpnet/retrained_encoder/*" "models/mpnet/classifiers/retrained/*" \
-     "outputs/final_comparison/final_model_comparison.csv"
-   ```
-   (A plain `git push` to the Space is rejected, because this repo has binary files that are not in LFS.)
-3. The Space builds the [Dockerfile](Dockerfile) and serves on port 7860. Check `https://<user>-<space>.hf.space/healthz`.
+Free personal accounts can host up to two ZeroGPU Spaces if their email is verified,
+the account is over 30 days old and it is in good standing. GPU access has queues and daily quotas.
+See [ZeroGPU requirements](https://huggingface.co/docs/hub/spaces-zerogpu).
+Creating a Docker or Gradio Space on CPU Basic requires a paid plan; the CPU Basic route is not a free fallback.
 
-To run the same image locally: `docker build -t aspectai . && docker run -p 7860:7860 aspectai`.
+Publish with a write-enabled Hugging Face login (Git LFS model files must already be downloaded):
 
-Public-use safeguards: request body capped at 16 KB, reviews capped at 1,000 characters, 30 requests per minute per client, generic error messages, no review text stored or logged, and no external API calls (the model runs offline inside the container).
+```bash
+hf auth login
+python deploy/zerogpu/publish.py
+# If the write token is saved under a different name:
+python deploy/zerogpu/publish.py --token-name deploying
+```
+
+The publisher creates or reuses `zaabinh/aspectai` on ZeroGPU and uploads only the runtime,
+model and documentation files. It maps [deploy/zerogpu/requirements.txt](deploy/zerogpu/requirements.txt)
+to the Space's root `requirements.txt`; the repository's root requirements remain for experiments.
+No token is uploaded. The Space YAML configuration is at the top of this README.
+
+The Flask UI remains available locally with `python demo/app.py`, or in Docker:
+`docker build -t aspectai . && docker run -p 7860:7860 aspectai`.
+Its `/healthz` endpoint and HTTP rate limiter apply to Flask, not the Gradio Space.
+
+Both interfaces cap reviews at 1,000 characters. The Gradio interface disables input flagging
+and uses generic inference errors. The Flask interface additionally caps requests at 16 KB
+and allows 30 requests per minute per client.
 
 ## Limitations
 
@@ -177,8 +192,8 @@ Public-use safeguards: request body capped at 16 KB, reviews capped at 1,000 cha
 - **Compressed scores.** Scores mostly fall between 0.3 and 0.7, and thresholds sit close to 0.5, so small wording changes can flip a decision.
 - **English only.** The training data is machine-translated, so phrasing that differs from the translations can be misread.
 - **Latency.** About 100–200 ms per review on a laptop CPU.
-- **Rate limit.** It is in-process and keyed on `X-Forwarded-For`, so it is a soft guard against floods, not abuse protection.
-- **Hosting.** Free Spaces sleep when idle; the first visit after that waits for a cold start.
+- **Flask rate limit.** It is in-process and keyed on `X-Forwarded-For`, so it is a soft guard against floods, not abuse protection.
+- **Hosting.** ZeroGPU uses shared capacity, queues and daily GPU quotas. Cold starts reload the model. Published CPU metrics may differ slightly on GPU near a classification threshold.
 
 ## Future improvements
 
