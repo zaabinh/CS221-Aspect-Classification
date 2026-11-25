@@ -14,7 +14,7 @@ short_description: Multi-label aspect classification of restaurant reviews
 Given a restaurant review, predict which aspects it talks about: **food, price, service, ambiance, miscellaneous**.
 One review can mention several aspects, so this is multi-label classification.
 
-**Live demo:** [AspectAI on Hugging Face Spaces](https://huggingface.co/spaces/zaabinh/aspectai).
+**Deployment target:** [AspectAI on Hugging Face Spaces](https://huggingface.co/spaces/zaabinh/aspectai) (pending deployment; a Hugging Face token with Space write/create permissions is required).
 
 | Desktop | Mobile |
 | --- | --- |
