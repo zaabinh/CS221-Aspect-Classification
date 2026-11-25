@@ -1,9 +1,17 @@
-pandas
-numpy
-matplotlib
-beautifulsoup4
-nltk
-scikit-learn
-openpyxl
-wordcloud
-sentence-transformers
+# Runtime pins for the demo. The encoder was saved with sentence-transformers 5.6.0 / transformers 5.12.1 / torch 2.12.1;
+# older sentence-transformers (e.g. 5.0) cannot load it. scikit-learn must match the pickled classifier (1.8.0).
+# CPU torch: pip install --index-url https://download.pytorch.org/whl/cpu torch==2.12.1
+torch==2.12.1
+sentence-transformers==5.6.0
+transformers==5.12.1
+tokenizers==0.22.2
+safetensors==0.8.0
+huggingface_hub==1.33.0
+scikit-learn==1.8.0
+scipy==1.18.1
+numpy==2.2.6
+joblib==1.5.1
+nltk==3.9.4
+contractions==0.1.73
+Flask==3.1.2
+gunicorn==27.0.1

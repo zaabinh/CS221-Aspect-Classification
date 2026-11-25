@@ -1,177 +1,112 @@
-/**
- * ABSA Restaurant Demo · script.js
- * Luồng: nhập review → debounce gọi /analyze → hiện tag gợi ý → bấm Đăng → card xuất hiện
- */
+const $ = (id) => document.getElementById(id);
+const input = $("review-input");
+const analyzeBtn = $("analyze-btn");
+const modelReady = !analyzeBtn.disabled;
 
-const reviewInput = document.getElementById("review-input");
-const authorInput = document.getElementById("author-input");
-const charNum = document.getElementById("char-num");
-const tagPreview = document.getElementById("tag-preview");
-const suggestedTags = document.getElementById("suggested-tags");
-const postBtn = document.getElementById("post-btn");
-const analyzeStatus = document.getElementById("analyze-status");
-const reviewFeed = document.getElementById("review-feed");
-const feedEmpty = document.getElementById("feed-empty");
-const totalCount = document.getElementById("total-count");
-const toast = document.getElementById("toast");
-
-const ASPECT_META = {
-  food: { emoji: "🍜", label: "Food" },
-  service: { emoji: "🧑‍🍳", label: "Service" },
-  price: { emoji: "💰", label: "Price" },
-  ambiance: { emoji: "🌿", label: "Ambiance" },
-  miscellaneous: { emoji: "📌", label: "Miscellaneous" },
+const LABELS = {
+  food: "Food",
+  price: "Price",
+  service: "Service",
+  ambiance: "Ambiance",
+  miscellaneous: "Miscellaneous",
 };
 
-let currentTags = []; // tags từ model cho review hiện tại
-let reviewCount = 0;
-let analyzeTimer = null;
-let isAnalyzing = false;
+function updateCount() {
+  $("char-num").textContent = input.value.length;
+}
 
-// ── Char counter + debounce analyze ─────────────────────────
-reviewInput.addEventListener("input", () => {
-  const len = reviewInput.value.length;
-  charNum.textContent = len;
+function show(view) {
+  for (const id of ["result-empty", "result-error", "result"]) {
+    $(id).classList.toggle("hidden", id !== view);
+  }
+}
 
-  // Reset
-  currentTags = [];
-  postBtn.disabled = true;
-  tagPreview.classList.add("hidden");
-  analyzeStatus.textContent = "";
+function showError(message) {
+  $("result-error").textContent = message;
+  show("result-error");
+}
 
-  clearTimeout(analyzeTimer);
+function render(data) {
+  const tags = $("tags");
+  tags.replaceChildren(
+    ...data.aspects.map((a) => {
+      const el = document.createElement("span");
+      el.className = "tag";
+      el.dataset.aspect = a;
+      el.textContent = LABELS[a] || a;
+      return el;
+    }),
+  );
 
-  if (len < 5) return;
+  $("score-chart").replaceChildren(
+    ...data.scores.map((s) => {
+      const li = document.createElement("li");
+      li.dataset.aspect = s.aspect;
+      li.className = s.predicted ? "is-on" : "is-off";
+      li.innerHTML = `
+        <span class="sc-name"></span>
+        <span class="sc-track">
+          <span class="sc-fill" style="width:${(s.score * 100).toFixed(1)}%"></span>
+          <span class="sc-tick" style="left:${(s.threshold * 100).toFixed(1)}%"></span>
+        </span>
+        <span class="sc-val"></span>
+        <span class="sc-decision"></span>`;
+      li.querySelector(".sc-name").textContent = LABELS[s.aspect] || s.aspect;
+      li.querySelector(".sc-val").textContent = `${s.score.toFixed(3)} / ${s.threshold.toFixed(2)}`;
+      li.querySelector(".sc-decision").textContent = s.predicted ? "Predicted" : "Not predicted";
+      li.title = `${LABELS[s.aspect]}: score ${s.score.toFixed(3)}, threshold ${s.threshold.toFixed(2)}`;
+      return li;
+    }),
+  );
 
-  // Debounce 800ms — chờ user gõ xong mới gọi API
-  analyzeStatus.textContent = "Đang phân tích...";
-  analyzeTimer = setTimeout(() => analyzeText(reviewInput.value.trim()), 800);
-});
+  $("fallback-note").classList.toggle("hidden", !data.fallback_used);
+  $("latency").textContent = `${data.latency_ms} ms on CPU`;
+  $("processed-text").textContent = data.processed_text;
+  show("result");
+}
 
-// ── Gọi /analyze ────────────────────────────────────────────
-async function analyzeText(text) {
-  if (!text || isAnalyzing) return;
-  isAnalyzing = true;
+async function analyze() {
+  const text = input.value.trim();
+  if (!text) {
+    showError("Enter a review first, or pick one of the samples.");
+    input.focus();
+    return;
+  }
 
+  analyzeBtn.disabled = true;
+  analyzeBtn.textContent = "Analyzing...";
   try {
     const resp = await fetch("/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
     });
-    const data = await resp.json();
-
-    if (data.aspects && data.aspects.length > 0) {
-      currentTags = data.aspects;
-      renderTagPreview(currentTags);
-      analyzeStatus.textContent = "";
-      postBtn.disabled = false;
-    } else {
-      analyzeStatus.textContent = "Không tìm thấy aspect.";
-    }
-  } catch {
-    analyzeStatus.textContent = "Không thể kết nối server.";
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.error || `Request failed (${resp.status}).`);
+    render(data);
+  } catch (err) {
+    showError(err instanceof TypeError ? "Could not reach the server. Check your connection and try again." : err.message);
   } finally {
-    isAnalyzing = false;
+    analyzeBtn.disabled = !modelReady;
+    analyzeBtn.textContent = "Analyze review";
   }
 }
 
-// ── Hiển thị tag preview ─────────────────────────────────────
-function renderTagPreview(tags) {
-  suggestedTags.innerHTML = "";
-  tags.forEach((asp) => {
-    const meta = ASPECT_META[asp] || { emoji: "🔹", label: asp };
-    const span = document.createElement("span");
-    span.className = "tag";
-    span.dataset.aspect = asp;
-    span.textContent = `${meta.emoji} ${meta.label}`;
-    suggestedTags.appendChild(span);
-  });
-  tagPreview.classList.remove("hidden");
-}
-
-// ── Đăng review ─────────────────────────────────────────────
-function postReview() {
-  const text = reviewInput.value.trim();
-  const author = authorInput.value.trim() || "Khách ẩn danh";
-  if (!text || currentTags.length === 0) return;
-
-  // Tạo card
-  addReviewCard(author, text, currentTags);
-
-  // Reset form
-  reviewInput.value = "";
-  authorInput.value = "";
-  charNum.textContent = "0";
-  currentTags = [];
-  postBtn.disabled = true;
-  tagPreview.classList.add("hidden");
-  analyzeStatus.textContent = "";
-
-  // Toast
-  showToast();
-}
-
-// ── Tạo review card ──────────────────────────────────────────
-function addReviewCard(author, text, tags) {
-  // Ẩn empty state
-  feedEmpty && feedEmpty.remove();
-
-  reviewCount++;
-  totalCount.textContent = `${reviewCount} đánh giá`;
-
-  const initials =
-    author === "Khách ẩn danh"
-      ? "👤"
-      : author
-          .split(" ")
-          .map((w) => w[0])
-          .slice(-2)
-          .join("")
-          .toUpperCase();
-
-  const card = document.createElement("div");
-  card.className = "review-card";
-  card.innerHTML = `
-    <div class="card-header">
-      <div class="card-avatar">${initials}</div>
-      <div class="card-meta">
-        <div class="card-author">${escHtml(author)}</div>
-        <div class="card-time">Vừa xong</div>
-      </div>
-    </div>
-    <p class="card-body">${escHtml(text)}</p>
-    <div class="card-tags">
-      ${tags
-        .map((asp) => {
-          const m = ASPECT_META[asp] || { emoji: "🔹", label: asp };
-          return `<span class="tag" data-aspect="${asp}">${m.emoji} ${m.label}</span>`;
-        })
-        .join("")}
-    </div>
-  `;
-
-  // Chèn lên đầu feed
-  reviewFeed.insertBefore(card, reviewFeed.firstChild);
-}
-
-// ── Toast ────────────────────────────────────────────────────
-function showToast() {
-  toast.classList.remove("hidden");
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => toast.classList.add("show"));
-  });
-  setTimeout(() => {
-    toast.classList.remove("show");
-    setTimeout(() => toast.classList.add("hidden"), 300);
-  }, 2200);
-}
-
-// ── Utility ─────────────────────────────────────────────────
-function escHtml(str) {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
+input.addEventListener("input", updateCount);
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) analyze();
+});
+analyzeBtn.addEventListener("click", analyze);
+$("clear-btn").addEventListener("click", () => {
+  input.value = "";
+  updateCount();
+  show("result-empty");
+  input.focus();
+});
+$("sample-list").addEventListener("click", (e) => {
+  const btn = e.target.closest(".sample");
+  if (!btn) return;
+  input.value = btn.dataset.text;
+  updateCount();
+  if (modelReady) analyze();
+});

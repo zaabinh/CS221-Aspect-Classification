@@ -1,4 +1,10 @@
+"""Inference-time copy of the text pipeline in notebooks/01-preprocessing.ipynb.
+
+clean_review_text  -> the dataset's `review_en` column
+preprocess_review  -> the dataset's `review_cleaned` column (what the classifiers were trained on)
+"""
 import re
+
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 
@@ -11,9 +17,12 @@ try:
     STOP_WORDS = set(stopwords.words("english"))
 except LookupError as error:
     raise RuntimeError(
-        "Missing NLTK stopwords data. Run: python -m nltk.downloader stopwords wordnet"
+        "Missing NLTK stopwords data. Run: python -m nltk.downloader stopwords wordnet omw-1.4"
     ) from error
 
+# Negations are kept, exactly as in the preprocessing notebook.
+NEGATION_WORDS = {"no", "nor", "not", "never", "without", "cannot"}
+STOP_WORDS_FOR_ML = STOP_WORDS - NEGATION_WORDS
 LEMMATIZER = WordNetLemmatizer()
 
 
@@ -36,25 +45,24 @@ def _expand_contractions(text: str) -> str:
     return text
 
 
-def preprocess_review(review: str) -> str:
+def clean_review_text(review: str) -> str:
     if not isinstance(review, str):
         raise TypeError("Review must be a string")
 
-    review = review.strip()
+    review = review.replace("​", " ")
+    review = _expand_contractions(review)
+    review = review.lower()
+    review = re.sub(r"[^a-z0-9\s]", " ", review)
+    return re.sub(r"\s+", " ", review).strip()
+
+
+def preprocess_review(review: str) -> str:
+    review = clean_review_text(review)
     if not review:
         raise ValueError("Review cannot be empty")
 
-    review = _expand_contractions(review)
-    review = review.lower()
-    review = re.sub(r"[^a-zA-Z0-9\s]", " ", review)
-    review = re.sub(r"\s+", " ", review).strip()
-    review = " ".join(
-        word for word in review.split()
-        if word not in STOP_WORDS
-    )
-    review = " ".join(
+    return " ".join(
         LEMMATIZER.lemmatize(word)
         for word in review.split()
+        if word not in STOP_WORDS_FOR_ML
     )
-
-    return review

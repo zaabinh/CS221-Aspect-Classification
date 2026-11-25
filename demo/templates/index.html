@@ -1,107 +1,213 @@
 <!doctype html>
-<html lang="vi">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Demo · Đánh giá</title>
+    <title>AspectAI · Restaurant Review Aspect Classification</title>
+    <meta name="description" content="Multi-label aspect classification of restaurant reviews with a fine-tuned MPNet encoder and one-vs-rest logistic regression." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Crect width=%2216%22 height=%2216%22 rx=%223%22 fill=%22%230f5e5c%22/%3E%3Crect x=%223%22 y=%229%22 width=%222.5%22 height=%224%22 fill=%22%23fff%22/%3E%3Crect x=%226.75%22 y=%226%22 width=%222.5%22 height=%227%22 fill=%22%23fff%22/%3E%3Crect x=%2210.5%22 y=%223%22 width=%222.5%22 height=%2210%22 fill=%22%23fff%22/%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
-    <link rel="stylesheet" href="/static/style.css" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
   </head>
   <body>
-    <!-- ══ HEADER ══ -->
     <header class="site-header">
-      <div class="header-inner">
-        <div class="restaurant-info">
-          <div class="restaurant-avatar">🍜</div>
-          <div>
-            <h1 class="restaurant-name">3bit Restaurant</h1>
-            <p class="restaurant-meta">Nhà hàng Việt Nam</p>
-          </div>
+      <div class="wrap header-inner">
+        <div class="brand">
+          <span class="brand-name">AspectAI</span>
+          <span class="brand-sub">Restaurant Review Aspect Classification</span>
         </div>
-        <div class="header-stats">
-          <span id="total-count">0 đánh giá</span>
+        <div class="header-meta">
+          {% if model %}
+          <span class="status status-ok" title="Encoder: {{ model.encoder_name }}">Model loaded</span>
+          {% else %}
+          <span class="status status-down" title="{{ load_error or 'Model not loaded' }}">Model unavailable</span>
+          {% endif %}
+          <a class="gh-link" href="{{ github_url }}" target="_blank" rel="noopener">GitHub</a>
         </div>
       </div>
     </header>
 
-    <div class="page-body">
-      <!-- ══ WRITE REVIEW PANEL ══ -->
-      <section class="write-panel">
-        <h2 class="panel-title">Viết đánh giá của bạn</h2>
+    <main class="wrap">
+      <section class="intro">
+        <h1>Which parts of the meal is this review about?</h1>
+        <p>
+          Paste an English restaurant review. A fine-tuned MPNet encoder and five binary classifiers
+          decide which of <strong>food</strong>, <strong>price</strong>, <strong>service</strong>,
+          <strong>ambiance</strong> and <strong>miscellaneous</strong> it mentions. One review can
+          mention several at once.
+        </p>
+      </section>
 
-        <div class="input-group">
-          <input
-            id="author-input"
-            type="text"
-            placeholder="Tên của bạn (tùy chọn)"
-            maxlength="50"
-          />
-        </div>
-
-        <div class="input-group">
+      <section class="workbench" aria-label="Try the model">
+        <div class="panel input-panel">
+          <label for="review-input" class="field-label">Review</label>
           <textarea
             id="review-input"
-            placeholder='Chia sẻ trải nghiệm của bạn bằng tiếng Anh... &#10;e.g. "The broth was rich and flavorful, but the staff was a bit slow."'
-            rows="4"
-            maxlength="600"
+            rows="7"
+            maxlength="{{ max_chars }}"
+            placeholder="e.g. The curry was rich and full of flavour, but we waited forty minutes for a table."
           ></textarea>
-          <span class="char-hint"><span id="char-num">0</span>/600</span>
-        </div>
-
-        <!-- AI tag preview -->
-        <div id="tag-preview" class="tag-preview hidden">
-          <span class="tag-preview-label">
-            <svg
-              width="13"
-              height="13"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2.5"
-            >
-              <path d="M12 2L2 7l10 5 10-5-10-5z" />
-              <path d="M2 17l10 5 10-5" />
-              <path d="M2 12l10 5 10-5" />
-            </svg>
-            AI gợi ý tag
-          </span>
-          <div id="suggested-tags" class="suggested-tags"></div>
-        </div>
-
-        <div class="panel-footer">
-          <div class="footer-left">
-            <span id="analyze-status" class="analyze-status"></span>
+          <div class="input-row">
+            <span class="char-count"><span id="char-num">0</span> / {{ max_chars }}</span>
+            <div class="actions">
+              <button type="button" id="clear-btn" class="btn btn-quiet">Clear</button>
+              <button type="button" id="analyze-btn" class="btn btn-primary" {% if not model %}disabled{% endif %}>Analyze review</button>
+            </div>
           </div>
-          <button
-            id="post-btn"
-            class="post-btn"
-            onclick="postReview()"
-            disabled
-          >
-            Đăng đánh giá
-          </button>
+
+          <div class="samples">
+            <p class="samples-title">Or try a sample</p>
+            <div class="sample-list" id="sample-list">
+              <button type="button" class="sample" data-text="The lamb biryani was delicious and the portions were huge, but it is far too expensive for what you get.">Great food, high price</button>
+              <button type="button" class="sample" data-text="Our waiter was rude and ignored us for twenty minutes, even though the dining room is beautifully decorated.">Rude staff, nice room</button>
+              <button type="button" class="sample" data-text="Cheap prices, friendly staff and a cozy, quiet atmosphere. We will definitely come back.">Cheap, friendly, cozy</button>
+              <button type="button" class="sample" data-text="The chicken was dry and cold, and the music was so loud we could not hear each other.">Cold food, loud music</button>
+              <button type="button" class="sample" data-text="The restaurant is hard to find and there is nowhere to park nearby.">Location and parking</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel result-panel" id="result-panel" aria-live="polite">
+          <div class="result-empty" id="result-empty">
+            <p class="result-empty-title">No review analyzed yet</p>
+            <p>Write a review or pick a sample, then select <em>Analyze review</em>. Results show here.</p>
+          </div>
+
+          <div class="result-error hidden" id="result-error" role="alert"></div>
+
+          <div class="result hidden" id="result">
+            <div class="result-head">
+              <h2>Predicted aspects</h2>
+              <span class="latency" id="latency"></span>
+            </div>
+            <div class="tags" id="tags"></div>
+            <p class="fallback-note hidden" id="fallback-note">
+              No aspect passed its threshold, so the highest-scoring aspect is returned (same rule used in evaluation).
+            </p>
+
+            <h3 class="chart-title">Model score per aspect</h3>
+            <ul class="score-chart" id="score-chart"></ul>
+            <p class="chart-legend">
+              Numbers read score / threshold. The <span class="legend-tick" aria-hidden="true"></span> tick marks each
+              aspect's threshold, tuned on the validation set; an aspect is predicted when its bar reaches the tick. Scores are logistic-regression sigmoid outputs,
+              not calibrated probabilities.
+            </p>
+
+            <details class="processed">
+              <summary>Text the model saw after preprocessing</summary>
+              <code id="processed-text"></code>
+            </details>
+          </div>
         </div>
       </section>
 
-      <!-- ══ REVIEW FEED ══ -->
-      <section class="feed-section">
-        <h2 class="panel-title">Đánh giá từ khách hàng</h2>
-        <div id="review-feed" class="review-feed">
-          <div class="feed-empty" id="feed-empty">
-            <span>🍽</span>
-            <p>Chưa có đánh giá nào. Hãy là người đầu tiên!</p>
-          </div>
+      <section class="section" aria-labelledby="how-title">
+        <h2 id="how-title">How it works</h2>
+        <ol class="pipeline">
+          <li><strong>Review text</strong><span>Raw English review</span></li>
+          <li><strong>Preprocessing</strong><span>Expand contractions, lowercase, strip punctuation and extra spaces</span></li>
+          <li><strong>MPNet embedding</strong><span>Fine-tuned all-mpnet-base-v2, 768-d, L2-normalized</span></li>
+          <li><strong>One-vs-rest classification</strong><span>One logistic regression per aspect</span></li>
+          <li><strong>Per-aspect thresholds</strong><span>Each aspect has its own cut-off, tuned for F1 on validation data</span></li>
+          <li><strong>Aspect predictions</strong><span>Every aspect that passes its threshold</span></li>
+        </ol>
+        <div class="why">
+          <h3>Why multi-label?</h3>
+          <p>
+            Reviews rarely talk about one thing. "Tasty food but overpriced" is about food <em>and</em> price.
+            A single-label classifier would have to pick one and drop the other. Here each aspect is a separate
+            yes/no decision, so a review gets as many labels as it deserves. In the dataset a review mentions
+            about two aspects on average (1.97).
+          </p>
         </div>
       </section>
-    </div>
 
-    <!-- ══ TOAST ══ -->
-    <div id="toast" class="toast hidden">✓ Đánh giá đã được đăng!</div>
+      <section class="section" aria-labelledby="model-title">
+        <h2 id="model-title">Model card</h2>
+        <dl class="model-card">
+          <div><dt>Embedding model</dt><dd>sentence-transformers/all-mpnet-base-v2</dd></div>
+          <div><dt>Fine-tuning</dt><dd>Pairwise fine-tuning with cosine-similarity loss: two training reviews should be as similar as their aspect sets overlap (Jaccard). 2,862 pairs, 3 epochs, training split only</dd></div>
+          <div><dt>Classifier</dt><dd>One-vs-rest logistic regression, implemented from scratch in NumPy (gradient descent, C = 10, balanced class weights)</dd></div>
+          <div><dt>Thresholds</dt>
+            <dd>
+              {% if model %}
+                {% for a in model.aspects %}{{ a }} {{ '%.2f'|format(model.thresholds[a]) }}{% if not loop.last %}, {% endif %}{% endfor %}
+              {% else %}Per-aspect, tuned on validation F1{% endif %}
+            </dd>
+          </div>
+          <div><dt>Labels</dt><dd>5 aspects: food, price, service, ambiance, miscellaneous</dd></div>
+          <div><dt>Data</dt><dd>796 restaurant reviews (Bangla, translated to English); split 477 train / 159 validation / 160 test</dd></div>
+          <div><dt>Serving</dt><dd>Flask app, model loaded once at startup, CPU inference. Reviews are not stored or logged.</dd></div>
+        </dl>
+      </section>
 
-    <script src="/static/script.js"></script>
+      <section class="section" aria-labelledby="eval-title">
+        <h2 id="eval-title">Evaluation</h2>
+        {% if results %}
+        <p class="eval-note">
+          Held-out test split (160 reviews), from
+          <code>outputs/final_comparison/final_model_comparison.csv</code>. Thresholds were tuned on the
+          validation split only. Higher is better except Hamming loss.
+        </p>
+        <div class="table-scroll">
+          <table class="eval-table">
+            <thead>
+              <tr>
+                <th scope="col">Model</th>
+                <th scope="col">Macro F1</th>
+                <th scope="col">Micro F1</th>
+                <th scope="col">Samples F1</th>
+                <th scope="col">Exact match</th>
+                <th scope="col">Hamming loss</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for r in results %}
+              <tr{% if r.model == 'MPNet retrained' %} class="is-served"{% endif %}>
+                <th scope="row">{{ {'MPNet retrained': 'Fine-tuned MPNet + LR', 'MPNet unretrained': 'Base MPNet + LR', 'TF-IDF': 'TF-IDF + LR'}.get(r.model, r.model) }}{% if r.model == 'MPNet retrained' %} <span class="served">served here</span>{% endif %}</th>
+                <td>{{ '%.3f'|format(r.macro_f1|float) }}</td>
+                <td>{{ '%.3f'|format(r.micro_f1|float) }}</td>
+                <td>{{ '%.3f'|format(r.samples_f1|float) }}</td>
+                <td>{{ '%.3f'|format(r.exact_match_ratio|float) }}</td>
+                <td>{{ '%.3f'|format(r.hamming_loss|float) }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        {% for r in results if r.model == 'MPNet retrained' %}
+        <h3 class="per-aspect-title">Per-aspect F1, fine-tuned MPNet</h3>
+        <ul class="per-aspect">
+          {% for a in ['food', 'price', 'service', 'ambiance', 'miscellaneous'] %}
+          {% set f = r[a ~ '_f1']|float %}
+          <li data-aspect="{{ a }}">
+            <span class="pa-name">{{ a }}</span>
+            <span class="pa-track"><span class="pa-fill" style="width: {{ (f * 100)|round(1) }}%"></span></span>
+            <span class="pa-val">{{ '%.2f'|format(f) }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+        <p class="eval-note">
+          Miscellaneous is the weak spot: it has only 14 test examples and no consistent wording
+          (location, online reviews, marketing...). Treat predictions for it with caution.
+        </p>
+        {% endfor %}
+        {% else %}
+        <p class="eval-note">Evaluation results file is not available on this server.</p>
+        {% endif %}
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap">
+        CS221 course project, University of Information Technology, VNU-HCM.
+        <a href="{{ github_url }}" target="_blank" rel="noopener">Source code</a>
+      </div>
+    </footer>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
   </body>
 </html>
